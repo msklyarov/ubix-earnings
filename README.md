@@ -12,3 +12,5 @@ WALLET_PKS_REMINDERS=[["111111111111111111111111111111111111111111111111", 12e5]
 
 #### MAIN_PROJECT_WALLET - target wallet address
 #### WALLET_PKS_REMINDERS - array of [[PK,WALLET_REMINDER]]
+
+## Add node ./index.js call to crontab with any interval
