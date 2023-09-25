@@ -11,7 +11,7 @@ const sleep = delay => {
 };
 
 // на сколько частей побить сумму (для того, чтобы не ждать стабильности блоков)
-const NUM_OF_OUTPUTS = 2;
+const NUM_OF_OUTPUTS = 1;
 
 class CilUtils {
     constructor(options) {
