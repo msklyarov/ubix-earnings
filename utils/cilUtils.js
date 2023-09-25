@@ -11,7 +11,7 @@ const sleep = delay => {
 };
 
 // на сколько частей побить сумму (для того, чтобы не ждать стабильности блоков)
-const NUM_OF_OUTPUTS = 20;
+const NUM_OF_OUTPUTS = 2;
 
 class CilUtils {
     constructor(options) {
@@ -22,7 +22,8 @@ class CilUtils {
         assert(apiUrl || rpcAddress, 'Specify apiUrl or rpcAddress (ENV)');
         assert(rpcPort, 'Specify rpcPort');
 
-        this._client = rpc.client.http({host: rpcAddress, port: rpcPort, auth: `${rpcUser}:${rpcPass}`});
+        const fClient = rpcPort === 443 ? rpc.client.https : rpc.client.http;
+        this._client = fClient({host: rpcAddress, port: rpcPort, auth: `${rpcUser}:${rpcPass}`});
         this._kpFunds = factory.Crypto.keyPairFromPrivate(privateKey);
 
         this._loadedPromise = factory
