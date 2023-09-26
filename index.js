@@ -7,8 +7,8 @@ const collectUbx = require('./utils/collectUbx');
 
 (async () => {
     // result: pk, address, reminder
-    const arrWalletPksAndReminders = processPksReminders(process.env.WALLET_PKS_REMINDERS);
+    const arrWalletPksAndReminders = processPksReminders(process.env.PKS_REMINDERS_FROM);
 
     // последний - флаг вывести балансы, но не переводить
-    await collectUbx(arrWalletPksAndReminders, process.env.MAIN_PROJECT_WALLET, true);
+    await collectUbx(arrWalletPksAndReminders, JSON.parse(process.env.WALLETS_TO));
 })();
