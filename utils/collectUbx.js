@@ -4,7 +4,7 @@ const commandLineArgs = require('command-line-args');
 
 const CilUtils = require('./cilUtils');
 const Config = require('./config');
-const calcFee = require('./calcFee');
+const estimateTxFee = require('./estimateTxFee');
 
 let cilUtils;
 let concilium;
@@ -15,7 +15,7 @@ const sleep = delay => {
     });
 };
 
-const collectUbx = async (arrWalletPksAndReminders, arrWalletsTo) => {
+const collectUbx = async (arrWalletPksAndReminders, arrWalletsTo, bWaitForTx = false) => {
     if (!cilUtils) {
         // Читаем опции
         const options = readCmdLineOptions();
@@ -36,70 +36,80 @@ const collectUbx = async (arrWalletPksAndReminders, arrWalletsTo) => {
     for (const objWallet of arrWalletPksAndReminders) {
         console.log(`Processing wallet: Ux${objWallet.address}, reminder: ${objWallet.reminder}`);
 
-        for (const arrWalletTo of arrWalletsTo) {
-            const arrUtxos = await cilUtils.getUtxos(`Ux${objWallet.address}`);
+        const arrUtxos = await cilUtils.getUtxos(`Ux${objWallet.address}`);
 
-            const nAmount = arrUtxos.reduce((acc, e) => acc + e.amount, 0);
+        const nAmount = arrUtxos.reduce((acc, e) => acc + e.amount, 0);
 
-            console.log('Amount, UBX: ', nAmount);
+        console.log('Amount, UBX: ', nAmount);
 
-            if (nAmount < objWallet.reminder) {
-                console.log('Wallet amount is less than a required reminder');
-                continue;
-            }
+        if (nAmount < objWallet.reminder) {
+            console.log('Wallet amount is less than a required reminder');
+            continue;
+        }
 
-            const nAmountToSend = nAmount - objWallet.reminder;
+        // увеличим оценку вдвое на всякий случай
+        const nFeeEstimation = 2 * estimateTxFee(arrUtxos.length, arrWalletsTo.length, true);
 
-            console.log('Going to withdraw: ', nAmountToSend);
+        console.log('Fee estimation: ', nFeeEstimation);
 
-            const nFee = calcFee(arrUtxos.length, true);
+        const totalPercent = arrWalletsTo.map(item => item[1]).reduce((acc, curr) => acc + curr, 0);
 
-            const nWalletAmountToSend = Math.floor((nAmountToSend * arrWalletTo[1]) / 100) || 0;
-            const nWalletAmountToSendWoFee = nWalletAmountToSend - nFee;
+        if (totalPercent > 100) {
+            console.error('Percent count more than 100%');
+            continue;
+        }
 
-            if (nWalletAmountToSendWoFee < 1) {
-                console.log('Amount to send is less than a transaction fee');
-                continue;
-            }
+        const nAmountToSend = nAmount - objWallet.reminder - nFeeEstimation;
 
+        console.log('Going to withdraw: ', nAmountToSend);
+
+        if (nAmountToSend < nFeeEstimation) {
+            console.error('Amount to send is less than a transaction fee');
+            continue;
+        }
+
+        const arrWalletsToWithAmounts = arrWalletsTo.map(item => [
+            item[0],
+            Math.floor((nAmountToSend * item[1]) / 100)
+        ]);
+
+        for (let i = 0; i < arrWalletsTo.length; i++) {
             console.log(
-                `Receiver address: Ux${arrWalletTo[0]}, part: ${arrWalletTo[1]}%, UBX: ${nWalletAmountToSendWoFee}, fee: ${nFee}`
+                `Receiver address: Ux${arrWalletsTo[i][0]}, part: ${arrWalletsTo[i][1]}%, UBX: ${arrWalletsToWithAmounts[i][1]}`
             );
+        }
 
-            ({gathered: gatheredAmount, arrCoins} = cilUtils.gatherInputsForAmount(
-                arrUtxos,
-                nWalletAmountToSendWoFee,
-                false,
-                true
-            ));
+        ({gathered: gatheredAmount, arrCoins} = cilUtils.gatherInputsForAmount(arrUtxos, nAmountToSend, false, true));
 
-            const tx = await cilUtils.createTxWithFunds({
-                arrCoins,
-                gatheredAmount,
-                receiverAddr: arrWalletTo[0],
-                amount: nWalletAmountToSendWoFee,
-                nOutputs: 1,
-                nConciliumId: concilium || 0,
-                strFromAddress: objWallet.address,
-                strFromPk: objWallet.pk
-            });
+        const tx = await cilUtils.createTxWithFunds({
+            arrCoins,
+            gatheredAmount,
+            arrReceivers: arrWalletsToWithAmounts,
+            nOutputs: 1,
+            nConciliumId: concilium || 0,
+            strFromAddress: objWallet.address,
+            strFromPk: objWallet.pk
+        });
 
-            if (process.env.DEBUG) {
-                console.error(
-                    `Here is TX containment: ${JSON.stringify(
-                        CilUtils.prepareForStringifyObject(tx.rawData),
-                        undefined,
-                        2
-                    )}`
-                );
-                console.error('Here is your tx. You can send it via RPC.sendRawTx call');
-                console.log(tx.encode().toString('hex'));
-            }
+        if (process.env.DEBUG) {
+            console.error(
+                `Here is TX containment: ${JSON.stringify(
+                    CilUtils.prepareForStringifyObject(tx.rawData),
+                    undefined,
+                    2
+                )}`
+            );
+            console.error('Here is your tx. You can send it via RPC.sendRawTx call');
+            console.log(tx.encode().toString('hex'));
+        }
 
-            await cilUtils.sendTx(tx);
-            console.error(`Tx ${tx.getHash()} successfully sent`);
+        await cilUtils.sendTx(tx);
+        console.error(`Tx ${tx.getHash()} successfully sent`);
 
-            await sleep(120000);
+        if (bWaitForTx) {
+            console.log('Will wait for the transaction...');
+            await cilUtils.waitTxDoneExplorer(tx.getHash());
+            console.log('Completed. Check in the explorer');
         }
     }
 };
